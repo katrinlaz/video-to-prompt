@@ -7,7 +7,7 @@ Usage:
   python3 watch.py <url-or-file> --still T [T ...]     full-size frames only, for zooming into texture
 
 Writes to DIR (default: $TMPDIR/watch/<slug>):
-  video.mp4        the video (downloaded, or a link to the local file)
+  .download/       the downloaded video and captions (URLs only; a local file is read in place)
   sheet_NN.jpg     contact sheets, 12 timestamped frames each (4 x 3)
   frames/          the single frames (640 px), named by full-video second (e.g. 003.50.jpg)
   stills/          full-size frames from --still
@@ -59,27 +59,28 @@ def slugify(s):
 
 def fetch(src, out, start=None, end=None):
     meta = {"source": src}
-    video = os.path.join(out, "video.mp4")
     if is_url(src):
+        # every download goes into the script's own subfolder, emptied first,
+        # so a failed download can never fall back to an older video
+        dl = os.path.join(out, ".download")
+        shutil.rmtree(dl, ignore_errors=True)
+        os.makedirs(dl)
+        video = os.path.join(dl, "video.mp4")
         if not shutil.which("yt-dlp"):
             sys.exit("yt-dlp not found. Install: python3 -m pip install --user yt-dlp (or brew install yt-dlp)")
         cmd = ["yt-dlp", "--ffmpeg-location", FF, "--no-playlist",
                "-f", "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[height<=1080]+ba/b[height<=1080]/b",
                "--merge-output-format", "mp4",
                "--write-subs", "--write-auto-subs", "--sub-langs", "en,en-orig,en-US,en-GB", "--ignore-errors", "--sub-format", "vtt",
-               "--write-info-json", "-o", os.path.join(out, "video.%(ext)s")]
+               "--write-info-json", "-o", os.path.join(dl, "video.%(ext)s")]
         if start is not None or end is not None:
             # a window is cut locally after download; 720p keeps long videos quick
             cmd[cmd.index("-f") + 1] = cmd[cmd.index("-f") + 1].replace("1080", "720")
         cmd.append(src)
-        # clear any earlier download, so a failed download can never fall back to an old video
-        for f in os.listdir(out):
-            if f.startswith("video.") or f == "window.mp4":
-                os.remove(os.path.join(out, f))
         r = run(cmd)
         if r.returncode != 0 or not os.path.exists(video) or "Video:" not in run([FF, "-i", video]).stderr:
             sys.exit("Download failed:\n" + (r.stderr or r.stdout)[-1500:])
-        info = os.path.join(out, "video.info.json")
+        info = os.path.join(dl, "video.info.json")
         if os.path.exists(info):
             d = json.load(open(info))
             for k in ("title", "uploader", "upload_date", "duration", "webpage_url", "description"):
@@ -90,14 +91,7 @@ def fetch(src, out, start=None, end=None):
         src = os.path.realpath(os.path.expanduser(src))
         if not os.path.isfile(src):
             sys.exit(f"No such file: {src}")
-        if os.path.realpath(video) == src:
-            pass  # the source already sits at the output path: never delete it
-        elif os.path.islink(video) or not os.path.exists(video):
-            if os.path.lexists(video):
-                os.remove(video)
-            os.symlink(src, video)
-        else:
-            sys.exit(f"{video} already exists and is not the source. Choose another --out folder.")
+        video = src  # read in place: a local file is never copied, moved or deleted
         meta["title"] = os.path.basename(src)
     return video, meta
 
@@ -270,7 +264,15 @@ def main():
     FF = ffmpeg_bin()
 
     out = a.out or os.path.join(tempfile.gettempdir(), "watch", slugify(a.src))
+    # the script only writes, replaces or deletes its own files, in a folder it owns:
+    # a new or empty folder, or one holding an earlier watch report
+    marker = os.path.join(out, ".watch-output")
+    if os.path.isdir(out) and os.listdir(out) and not (os.path.exists(marker) or os.path.exists(os.path.join(out, "report.md"))):
+        sys.exit(f"{out} already holds other files. Use an empty or new --out folder.")
     os.makedirs(out, exist_ok=True)
+    open(marker, "w").close()
+    if os.path.exists(os.path.join(out, "report.md")):
+        os.remove(os.path.join(out, "report.md"))  # a failed run must not leave the previous report behind
     video, meta = fetch(a.src, out, None, None) if a.still else fetch(a.src, out, a.start, a.end)
     if a.still:
         sdir = os.path.join(out, "stills")
@@ -298,7 +300,7 @@ def main():
     cuts = [round(c + offset, 2) for c in scene_cuts(video)] if dur <= 1800 else []
     frames = extract_frames(video, out, fps, offset)
     sheets = make_sheets(frames, out)
-    caps = read_captions(out, offset if windowed else None, a.end)
+    caps = read_captions(os.path.join(out, ".download"), offset if windowed else None, a.end) if is_url(a.src) else None
     facts = audio_facts(video, offset) if p["has_audio"] else None
     if facts:
         json.dump({"loudness_every_0.5s": facts["curve"], "jumps_4db": facts["jumps"]},

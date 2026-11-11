@@ -60,7 +60,7 @@ python3 watch.py "<url-or-file>" [--start S] [--end S] [--fps N] [--out DIR]
 python3 watch.py "<url-or-file>" --still T [T ...]
 ```
 
-`--still` saves full-size frames for zooming into texture.
+`--still` saves full-size frames for zooming into texture. `--out` must be a new or empty folder (or an earlier output folder); the script never touches other files, and a local video is read in place.
 
 Made by Kate Lazarevich ([Wonderland on Tokens](https://wonderlandontokens.substack.com)). Inspired by the `/watch` idea in [claude-video](https://github.com/bradautomates/claude-video); the code here is written from scratch.
 
