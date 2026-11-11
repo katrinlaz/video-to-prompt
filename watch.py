@@ -72,9 +72,13 @@ def fetch(src, out, start=None, end=None):
             # a window is cut locally after download; 720p keeps long videos quick
             cmd[cmd.index("-f") + 1] = cmd[cmd.index("-f") + 1].replace("1080", "720")
         cmd.append(src)
+        # clear any earlier download, so a failed download can never fall back to an old video
+        for f in os.listdir(out):
+            if f.startswith("video.") or f == "window.mp4":
+                os.remove(os.path.join(out, f))
         r = run(cmd)
-        if not os.path.exists(video) or "Video:" not in run([FF, "-i", video]).stderr:
-            sys.exit("Download failed (no video stream):\n" + (r.stderr or r.stdout)[-1500:])
+        if r.returncode != 0 or not os.path.exists(video) or "Video:" not in run([FF, "-i", video]).stderr:
+            sys.exit("Download failed:\n" + (r.stderr or r.stdout)[-1500:])
         info = os.path.join(out, "video.info.json")
         if os.path.exists(info):
             d = json.load(open(info))
@@ -83,12 +87,17 @@ def fetch(src, out, start=None, end=None):
                     meta[k] = d[k]
             os.remove(info)
     else:
-        src = os.path.abspath(os.path.expanduser(src))
-        if not os.path.exists(src):
+        src = os.path.realpath(os.path.expanduser(src))
+        if not os.path.isfile(src):
             sys.exit(f"No such file: {src}")
-        if os.path.lexists(video):
-            os.remove(video)
-        os.symlink(src, video)
+        if os.path.realpath(video) == src:
+            pass  # the source already sits at the output path: never delete it
+        elif os.path.islink(video) or not os.path.exists(video):
+            if os.path.lexists(video):
+                os.remove(video)
+            os.symlink(src, video)
+        else:
+            sys.exit(f"{video} already exists and is not the source. Choose another --out folder.")
         meta["title"] = os.path.basename(src)
     return video, meta
 

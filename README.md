@@ -51,7 +51,7 @@ Start a new session. Type `/video-to-prompt` or just send a video link and say w
 - Soft transitions (dissolves) aren't detected automatically.
 - Private or login-only videos may not download.
 
-Nothing leaves your computer except the video download.
+The script processes the video locally and makes no AI API calls. The frames are then read by the AI you use (Claude or Codex).
 
 ## Running the script yourself
 
