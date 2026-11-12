@@ -17,7 +17,7 @@ Nothing named → ask one line: what do you like here, or do you want to recreat
 
 ## 2. Run the script
 
-`watch.py` sits in the same folder as this file. Run it with python3:
+`watch.py` sits in the same folder as this file. Run it with python3 (on Windows: `py` or `python`):
 
 ```
 python3 <this skill's folder>/watch.py "<url-or-file>" [--start S --end S] [--fps N] [--out DIR]

@@ -13,7 +13,7 @@ It cuts the video into timestamped frames, finds the cuts, reads the captions an
 
 ## What you need
 
-- **python3** with **numpy**
+- **Python 3** with **numpy**
 - **ffmpeg**
 - **yt-dlp** (for YouTube and other links)
 
@@ -23,6 +23,17 @@ On a Mac with Homebrew:
 brew install ffmpeg yt-dlp
 python3 -m pip install --user numpy
 ```
+
+On Windows (PowerShell):
+
+```
+winget install Python.Python.3.12
+winget install Gyan.FFmpeg
+winget install yt-dlp.yt-dlp
+py -m pip install --user numpy
+```
+
+Open a new terminal after installing so the tools are found. On Windows, type `py` or `python` wherever this page says `python3`.
 
 No ffmpeg? `python3 -m pip install --user imageio-ffmpeg` works too.
 
@@ -40,6 +51,8 @@ git clone https://github.com/katrinlaz/video-to-prompt ~/.claude/skills/video-to
 git clone https://github.com/katrinlaz/video-to-prompt ~/.codex/skills/video-to-prompt
 ```
 
+On Windows, `~` may not work in PowerShell; use `"$HOME\.claude\skills\video-to-prompt"` (or `.codex`) instead.
+
 No git? Click **Code → Download ZIP**, unzip, rename the folder to `video-to-prompt` and put it there.
 
 Start a new session. Type `/video-to-prompt` or just send a video link and say what you like.
@@ -50,6 +63,7 @@ Start a new session. Type `/video-to-prompt` or just send a video link and say w
 - Frames are pictures, not motion. For motion it looks at more frames per second on a short piece.
 - Soft transitions (dissolves) aren't detected automatically.
 - Private or login-only videos may not download.
+- Tested on a Mac. Windows support is written but not yet tested; if the contact sheets come out without timestamps there, that is the font fallback, and the times are in the frame file names.
 
 The script processes the video locally and makes no AI API calls. The frames are then read by the AI you use (Claude or Codex).
 

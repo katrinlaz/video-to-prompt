@@ -35,14 +35,16 @@ def ffmpeg_bin():
         import imageio_ffmpeg
         return imageio_ffmpeg.get_ffmpeg_exe()
     except Exception:
-        sys.exit("No ffmpeg. Install it (brew install ffmpeg) or: python3 -m pip install --user imageio-ffmpeg")
+        sys.exit("No ffmpeg. Install it (Mac: brew install ffmpeg; Windows: winget install ffmpeg) "
+                 "or: python -m pip install --user imageio-ffmpeg")
 
 
 FF = None
 
 
 def run(cmd, **kw):
-    return subprocess.run(cmd, capture_output=True, text=True, **kw)
+    # utf-8 explicitly: Windows would decode tool output with its local code page and can crash on titles
+    return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", **kw)
 
 
 def is_url(s):
@@ -67,7 +69,8 @@ def fetch(src, out, start=None, end=None):
         os.makedirs(dl)
         video = os.path.join(dl, "video.mp4")
         if not shutil.which("yt-dlp"):
-            sys.exit("yt-dlp not found. Install: python3 -m pip install --user yt-dlp (or brew install yt-dlp)")
+            sys.exit("yt-dlp not found. Install: python -m pip install --user yt-dlp "
+                     "(or Mac: brew install yt-dlp; Windows: winget install yt-dlp)")
         cmd = ["yt-dlp", "--ffmpeg-location", FF, "--no-playlist",
                "-f", "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[height<=1080]+ba/b[height<=1080]/b",
                "--merge-output-format", "mp4",
@@ -148,6 +151,15 @@ def extract_frames(video, out, fps, offset=0):
     return named
 
 
+def label_font():
+    # Windows ffmpeg builds often cannot find a font by themselves; point drawtext at Arial there
+    if os.name == "nt":
+        f = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", "arial.ttf")
+        if os.path.exists(f):
+            return "fontfile='" + f.replace("\\", "/").replace(":", "\\:") + "':"
+    return ""
+
+
 def make_sheets(frames, out):
     for f in os.listdir(out):
         if f.startswith("sheet_"):
@@ -158,21 +170,35 @@ def make_sheets(frames, out):
         chunk = frames[n:n + per]
         label = os.path.join(out, f"sheet_{len(sheets) + 1:02d}.jpg")
         # label each tile with its timestamp, then tile
-        inputs, filters = [], []
-        for i, (t, p) in enumerate(chunk):
+        inputs = []
+        for t, p in chunk:
             inputs += ["-i", p]
-            mm, ss = divmod(t, 60)
-            txt = f"{int(mm)}\\:{ss:05.2f}"
-            filters.append(f"[{i}:v]scale='if(gt(iw,ih),480,-2)':'if(gt(iw,ih),-2,560)',drawtext=text='{txt}':x=8:y=8:fontsize=22:"
-                           f"fontcolor=white:box=1:boxcolor=black@0.65[t{i}]")
-        tiles = "".join(f"[t{i}]" for i in range(len(chunk)))
         cols = min(SHEET_COLS, len(chunk))
         layout = "|".join(f"{'+'.join(['w0'] * (i % cols)) or '0'}_{'+'.join(['h0'] * (i // cols)) or '0'}"
                           for i in range(len(chunk)))
-        fc = ";".join(filters) + f";{tiles}xstack=inputs={len(chunk)}:layout={layout}:fill=black[o]" \
-            if len(chunk) > 1 else filters[0].replace(f"[t0]", "[o]")
-        r = run([FF, "-loglevel", "error", "-y"] + inputs + ["-filter_complex", fc, "-map", "[o]",
-                                                             "-frames:v", "1", "-q:v", "3", label])
+        tiles = "".join(f"[t{i}]" for i in range(len(chunk)))
+
+        def build(with_text):
+            filters = []
+            for i, (t, p) in enumerate(chunk):
+                f = f"[{i}:v]scale='if(gt(iw,ih),480,-2)':'if(gt(iw,ih),-2,560)'"
+                if with_text:
+                    mm, ss = divmod(t, 60)
+                    f += (f",drawtext={label_font()}text='{int(mm)}\\:{ss:05.2f}':x=8:y=8:fontsize=22:"
+                          f"fontcolor=white:box=1:boxcolor=black@0.65")
+                filters.append(f + f"[t{i}]")
+            fc = ";".join(filters) + f";{tiles}xstack=inputs={len(chunk)}:layout={layout}:fill=black[o]" \
+                if len(chunk) > 1 else filters[0].replace("[t0]", "[o]")
+            return run([FF, "-loglevel", "error", "-y"] + inputs + ["-filter_complex", fc, "-map", "[o]",
+                                                                    "-frames:v", "1", "-q:v", "3", label])
+
+        r = build(True)
+        if r.returncode != 0:
+            # no usable font (some Windows ffmpeg builds): build the sheet without timestamps
+            r = build(False)
+            if r.returncode == 0:
+                print(f"Note: no font for timestamps; {os.path.basename(label)} has none. "
+                      "Frame file names in frames/ carry the times.", file=sys.stderr)
         if r.returncode != 0:
             sys.exit("Sheet build failed: " + r.stderr[-800:])
         sheets.append((chunk[0][0], chunk[-1][0], label))
